@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Trial Complete</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 50px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        h1 {
+            font-size: 48px;
+            margin: 20px 0;
+        }
+        h2 {
+            font-size: 24px;
+            margin: 30px 0 10px 0;
+            font-weight: normal;
+        }
+        p {
+            font-size: 18px;
+            margin: 10px 0;
+        }
+    </style>
+    <script>
+        // Get trial number from URL parameter
+        function getTrialNumber() {
+            var params = new URLSearchParams(window.location.search);
+            return params.get('trial') || 'Unknown';
+        }
+        
+        window.onload = function() {
+            var trialNumber = getTrialNumber();
+            document.getElementById('trial-number').textContent = 'Trial ' + trialNumber;
+        };
+    </script>
+</head>
+<body>
+    <h1>🎉 Done! 🎉</h1>
+    <h2 id="trial-number">Trial</h2>
+    <p>Please Email the downloaded file to <strong>claasbeger@santafe.edu</strong></p>
+</body>
+</html>
+
