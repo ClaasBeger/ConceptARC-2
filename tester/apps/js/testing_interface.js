@@ -415,6 +415,7 @@ function fillPairPreview(pairId, inputGrid, outputGrid) {
 function loadJSONTask(train, test, taskName) {
     resetTask();
     $('#modal_bg').hide();
+    $('#random_task_btn').show(); // Show random button for regular tasks
     $('#error_display').hide();
     $('#info_display').hide();
     
@@ -611,6 +612,7 @@ function displayTrialTask(index) {
     $('#modal_bg').hide();
     $('#error_display').hide();
     $('#info_display').hide();
+    $('#random_task_btn').hide(); // Hide random button during trial
     
     CURRENT_TASK_NAME = testCaseData.taskName;
     
