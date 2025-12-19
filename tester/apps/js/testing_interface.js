@@ -56,10 +56,14 @@ function saveSubmissionData(trialNumber) {
     var link = document.createElement('a');
     link.href = url;
     link.download = SUBMISSION_FILE_NAME;
+    link.style.display = 'none'; // Ensure link is hidden
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    // Delay cleanup to ensure download starts (especially important on Mac)
+    setTimeout(function() {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }, 100);
 }
 
 // Get list of corpus-2 tasks
@@ -570,17 +574,128 @@ function loadTrialByNumber() {
         }
         
         console.log('Trial found:', trial.trialNumber, 'with', trial.testCases.length, 'test cases');
+        
+        // Check if there's at least one valid (non-placeholder) test case
+        var firstValidIndex = findNextValidTestIndex(0, trial);
+        if (firstValidIndex < 0) {
+            $('#modal_bg').show(); // Show modal if error
+            errorMsg('Trial ' + trialNumber + ' contains no valid test cases (all are placeholders)');
+            return;
+        }
+        
         CURRENT_TRIAL = trial;
         CURRENT_TRIAL_INDEX = 0;
         SUBMISSION_DATA = []; // Reset submissions for new trial
         
-        // Display first test case
-        displayTrialTask(0);
+        // Display first valid test case (will skip any placeholders at the start)
+        displayTrialTask(firstValidIndex);
     }).catch(function(error) {
         console.error('Error loading trial:', error);
         $('#modal_bg').show(); // Show modal if error
         errorMsg('Error loading trial: ' + (error.message || error));
     });
+}
+
+// Check if a test case is a placeholder (should be skipped)
+function isPlaceholderTest(testCase) {
+    if (!testCase) {
+        return true;
+    }
+    
+    // Check if input is missing
+    if (!testCase.input) {
+        return true;
+    }
+    
+    // Check if input is empty array
+    var input = testCase.input;
+    if (!input || input.length === 0) {
+        return true;
+    }
+    
+    // Check for 1x1 grids with value 0 (placeholder pattern)
+    if (input.length === 1 && input[0] && input[0].length === 1) {
+        var value = input[0][0];
+        // Only 1x1 grid with zero is a placeholder
+        if (value === 0) {
+            return true;
+        }
+    }
+    
+    // Check if input is all zeros (common placeholder pattern)
+    var allZeros = true;
+    var hasAnyContent = false;
+    for (var i = 0; i < input.length; i++) {
+        if (!input[i] || input[i].length === 0) {
+            continue;
+        }
+        hasAnyContent = true;
+        for (var j = 0; j < input[i].length; j++) {
+            if (input[i][j] !== 0) {
+                allZeros = false;
+                break;
+            }
+        }
+        if (!allZeros) break;
+    }
+    
+    // If input is all zeros and output is missing or also all zeros, it's likely a placeholder
+    if (allZeros && hasAnyContent) {
+        if (!testCase.output || testCase.output.length === 0) {
+            return true;
+        }
+        // Also check if output is all zeros
+        var outputAllZeros = true;
+        for (var i = 0; i < testCase.output.length; i++) {
+            if (!testCase.output[i] || testCase.output[i].length === 0) {
+                continue;
+            }
+            for (var j = 0; j < testCase.output[i].length; j++) {
+                if (testCase.output[i][j] !== 0) {
+                    outputAllZeros = false;
+                    break;
+                }
+            }
+            if (!outputAllZeros) break;
+        }
+        if (outputAllZeros) {
+            return true; // Both input and output are all zeros = placeholder
+        }
+    }
+    
+    // If output is missing entirely, it's likely a placeholder
+    if (!testCase.output) {
+        return true;
+    }
+    
+    return false;
+}
+
+// Find the next valid (non-placeholder) test case index in the trial
+// If startIndex is out of bounds, returns -1
+// If trial is not provided, uses CURRENT_TRIAL
+function findNextValidTestIndex(startIndex, trial) {
+    var trialToUse = trial || CURRENT_TRIAL;
+    if (!trialToUse || !trialToUse.testCases) {
+        return -1;
+    }
+    
+    // Ensure startIndex is within bounds
+    if (startIndex < 0) {
+        startIndex = 0;
+    }
+    if (startIndex >= trialToUse.testCases.length) {
+        return -1; // Already past the end
+    }
+    
+    for (var i = startIndex; i < trialToUse.testCases.length; i++) {
+        var testCase = trialToUse.testCases[i];
+        if (testCase && testCase.testCase && !isPlaceholderTest(testCase.testCase)) {
+            return i;
+        }
+    }
+    
+    return -1; // No valid test found
 }
 
 function displayTrialTask(index) {
@@ -603,6 +718,23 @@ function displayTrialTask(index) {
     if (!testCaseData) {
         errorMsg('Test case data not found at index ' + index);
         return;
+    }
+    
+    // Check if this is a placeholder test - if so, skip to next valid one
+    if (testCaseData.testCase && isPlaceholderTest(testCaseData.testCase)) {
+        var nextValidIndex = findNextValidTestIndex(index + 1);
+        if (nextValidIndex >= 0) {
+            // Recursively call with next valid index
+            displayTrialTask(nextValidIndex);
+            return;
+        } else {
+            // No more valid tests found - this shouldn't happen during normal flow
+            // (should be caught in submitSolution), but handle gracefully
+            errorMsg('No more valid test cases found. Trial may be complete.');
+            // Still set the index so submitSolution can handle completion
+            CURRENT_TRIAL_INDEX = index;
+            return;
+        }
     }
     
     CURRENT_TRIAL_INDEX = index;
@@ -712,20 +844,25 @@ function submitSolution() {
     // Handle trial mode vs regular mode
     if (CURRENT_TRIAL && CURRENT_TRIAL.testCases && CURRENT_TRIAL.testCases.length > 0) {
         // Trial mode: move to next test case in trial
-        if (CURRENT_TRIAL_INDEX + 1 < CURRENT_TRIAL.testCases.length) {
-            // Move to next test case in trial
-            displayTrialTask(CURRENT_TRIAL_INDEX + 1);
+        // Find next valid (non-placeholder) test case
+        var nextValidIndex = findNextValidTestIndex(CURRENT_TRIAL_INDEX + 1);
+        if (nextValidIndex >= 0) {
+            // Move to next valid test case in trial
+            displayTrialTask(nextValidIndex);
             resetOutputGrid();
         } else {
             // All test cases in trial completed - download JSON file
             var trialNumber = CURRENT_TRIAL.trialNumber;
             saveSubmissionData(trialNumber);
             
-            // Redirect to completion page
-            window.location.href = 'trial_complete.html?trial=' + trialNumber;
-            
-            CURRENT_TRIAL = null;
-            CURRENT_TRIAL_INDEX = 0;
+            // Wait a bit before redirecting to ensure download starts (especially important on Mac)
+            setTimeout(function() {
+                // Redirect to completion page
+                window.location.href = 'trial_complete.html?trial=' + trialNumber;
+                
+                CURRENT_TRIAL = null;
+                CURRENT_TRIAL_INDEX = 0;
+            }, 300);
         }
     } else {
         // Regular mode: move to next test case in current task
